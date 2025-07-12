@@ -2,7 +2,22 @@ const express = require('express');
 const router = express.Router();
 const employeeController = require('../controllers/employeeController');
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
+
+// Configure multer for file uploads
+const upload = multer({ 
+  dest: 'uploads/',
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+        file.mimetype === 'application/vnd.ms-excel') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel files are allowed'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
 
 // Employee data routes
 router.get('/', employeeController.getEmployees);
@@ -25,6 +40,7 @@ router.delete('/:employeeId', employeeController.deleteEmployee);
 
 // Import/export routes
 router.get('/template/download', employeeController.exportEmployeesTemplate);
+router.get('/export', employeeController.exportEmployees);
 router.post('/import', upload.single('file'), employeeController.importEmployees);
 
 module.exports = router;

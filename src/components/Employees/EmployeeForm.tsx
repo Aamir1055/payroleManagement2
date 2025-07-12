@@ -83,6 +83,29 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     return 'Not set';
   };
 
+  // Generate employee ID automatically
+  const generateEmployeeId = async () => {
+    setIsGeneratingId(true);
+    try {
+      const response = await fetch('/api/employees/next-id', {
+        headers: getAuthHeaders(),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setValue('employeeId', data.nextEmployeeId);
+        console.log('Generated Employee ID:', data.nextEmployeeId);
+      } else {
+        console.error('Failed to generate employee ID');
+        setValue('employeeId', 'EMP001');
+      }
+    } catch (error) {
+      console.error('Error generating ID:', error);
+      setValue('employeeId', 'EMP001');
+    } finally {
+      setIsGeneratingId(false);
+    }
+  };
+
   useEffect(() => {
     const fetchOptions = async () => {
       try {
@@ -103,6 +126,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         }
 
         if (employee) {
+          // Editing existing employee
           reset({
             ...employee,
             joiningDate: employee.joiningDate.split('T')[0],
@@ -117,6 +141,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             await fetchPositionsForOffice(employee.office_id);
           }
         } else if (!viewOnly) {
+          // Creating new employee - auto-generate ID
           await generateEmployeeId();
         }
       } catch (error) {
@@ -181,6 +206,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       if (response.ok) {
         const positionsData = await response.json();
         setFilteredPositions(positionsData);
+        console.log('Filtered positions for office:', selectedOfficeId, positionsData);
       } else {
         console.error('Failed to fetch positions for office');
         setFilteredPositions([]);
@@ -188,27 +214,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     } catch (error) {
       console.error('Error fetching positions for office:', error);
       setFilteredPositions([]);
-    }
-  };
-
-  const generateEmployeeId = async () => {
-    setIsGeneratingId(true);
-    try {
-      const response = await fetch('/api/employees/next-id', {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setValue('employeeId', data.nextEmployeeId);
-      } else {
-        console.error('Failed to generate employee ID');
-        setValue('employeeId', 'EMP001');
-      }
-    } catch (error) {
-      console.error('Error generating ID:', error);
-      setValue('employeeId', 'EMP001');
-    } finally {
-      setIsGeneratingId(false);
     }
   };
 
@@ -233,6 +238,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       reporting_time: reportingTime === 'Not set' ? undefined : reportingTime,
       duty_hours: parseDutyHours(dutyHours)
     };
+
+    console.log('Submitting employee data:', completeEmployeeData);
 
     if (onSubmit) {
       onSubmit(completeEmployeeData);

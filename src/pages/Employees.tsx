@@ -1,4 +1,3 @@
-import { Employee } from '../types';
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/Layout/MainLayout';
 import { EmployeeTable } from '../components/Employees/EmployeeTable';
@@ -7,6 +6,7 @@ import { useEmployees } from '../hooks/useEmployees';
 import { Plus, Filter, Download, Users, Upload, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import { Employee } from '../types';
 
 export const Employees: React.FC = () => {
   const {
@@ -34,7 +34,7 @@ export const Employees: React.FC = () => {
     const token = localStorage.getItem('token');
     return {
       'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : ''
+      'Authorization': token ? `Bearer ${token}` : '',
     };
   };
 
@@ -42,22 +42,22 @@ export const Employees: React.FC = () => {
     const fetchMasterData = async () => {
       try {
         const [officesRes, positionsRes] = await Promise.all([
-          fetch('/api/masters/offices', { headers: getAuthHeaders() }),
-          fetch('/api/masters/positions', { headers: getAuthHeaders() }),
+          fetch('/api/employees/offices/options', { headers: getAuthHeaders() }),
+          fetch('/api/employees/positions/options', { headers: getAuthHeaders() }),
         ]);
 
         const officesData = await officesRes.json();
         const positionsData = await positionsRes.json();
 
         const safeOffices = officesData.map((o: any) =>
-          typeof o === 'object' && o.name ? o.name : String(o)
+          typeof o === 'object' && o.name ? o.name : String(o.name || o)
         );
         const safePositions = positionsData.map((p: any) =>
-          typeof p === 'object' && p.title ? p.title : String(p)
+          typeof p === 'object' && p.title ? p.title : String(p.title || p)
         );
 
-        setMasterOffices(safeOffices.length > 0 ? safeOffices : ['Main Office']);
-        setMasterPositions(safePositions.length > 0 ? safePositions : ['Employee']);
+        setMasterOffices(safeOffices);
+        setMasterPositions(safePositions);
       } catch (error) {
         console.error('Failed to fetch master data', error);
       }
@@ -65,11 +65,12 @@ export const Employees: React.FC = () => {
     fetchMasterData();
   }, []);
 
-  const fallbackOffices = [...new Set(employees.map((emp) => emp.office_name || ''))].filter(Boolean);
-  const fallbackPositions = [...new Set(employees.map((emp) => emp.position_title || ''))].filter(Boolean);
+  // Get unique office and position names from employees for filtering
+  const employeeOffices = [...new Set(employees.map((emp) => emp.office_name || ''))].filter(Boolean);
+  const employeePositions = [...new Set(employees.map((emp) => emp.position_title || ''))].filter(Boolean);
 
-  const officesToUse = masterOffices.length > 0 ? masterOffices : fallbackOffices.length > 0 ? fallbackOffices : ['Main Office'];
-  const positionsToUse = masterPositions.length > 0 ? masterPositions : fallbackPositions.length > 0 ? fallbackPositions : ['Employee'];
+  const officesToUse = masterOffices.length > 0 ? masterOffices : employeeOffices;
+  const positionsToUse = masterPositions.length > 0 ? masterPositions : employeePositions;
 
   const filteredEmployees = employees.filter((employee) => {
     const search = searchTerm.toLowerCase();
@@ -129,7 +130,7 @@ export const Employees: React.FC = () => {
   const handleDownloadSampleExcel = () => {
     const sampleData = [
       {
-        'Employee ID': 'EMP001',
+        'Employee ID': '', // Will be auto-generated
         'Name': 'John Doe',
         'Email': 'john@example.com',
         'Office': officesToUse[0] || 'Main Office',
@@ -139,6 +140,13 @@ export const Employees: React.FC = () => {
         'Status': 'active',
       }
     ];
+    
+    // Add instructions sheet
+    const instructions = [
+      { 'Field': 'Employee ID', 'Description': 'Leave empty for auto-generation (EMP001, EMP002, etc.)' },
+      { 'Field': 'Office', 'Description': 'Use exact office name from your system' },
+      { 'Field': 'Position', 'Description': 'Use exact position title from your system' },
+    ];
 
     const worksheet = XLSX.utils.json_to_sheet(sampleData);
     const workbook = XLSX.utils.book_new();
@@ -146,6 +154,9 @@ export const Employees: React.FC = () => {
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
     saveAs(blob, 'sample_employee_import.xlsx');
+    
+    // Also add instructions sheet
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(instructions), 'Instructions');
   };
 
   const handleAddEmployee = () => {
@@ -154,7 +165,7 @@ export const Employees: React.FC = () => {
       employeeId: '',
       name: '',
       email: '',
-      office_id: 0,
+      office_id: 0, 
       office_name: officesToUse[0] || '',
       position_id: 0,
       position_title: positionsToUse[0] || '',
@@ -189,7 +200,7 @@ export const Employees: React.FC = () => {
   const handleSubmitEmployee = async (data: Employee) => {
     if (!data.office_id || !data.position_id) {
       alert('Office and Position are required fields');
-      return;
+      return; 
     }
     
     try {
@@ -219,7 +230,7 @@ export const Employees: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
+    const formData = new FormData(); 
     formData.append('file', file);
 
     try {
@@ -227,8 +238,8 @@ export const Employees: React.FC = () => {
         method: 'POST',
         body: formData,
         headers: {
-          'Accept': 'application/json',
-        },
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        }, 
       });
 
       if (response.ok) {
@@ -237,6 +248,8 @@ export const Employees: React.FC = () => {
       } else {
         throw new Error('Failed to import employees');
       }
+    } catch (err) {
+      alert(`Import error: ${(err as Error).message}`);
     } catch (err) {
       alert(`Import error: ${(err as Error).message}`);
     }
@@ -304,7 +317,7 @@ export const Employees: React.FC = () => {
                 {officesToUse.map((office, idx) => (
                   <option key={idx} value={String(office)}>
                     {String(office)}
-                  </option>
+                  </option> 
                 ))}
               </select>
               <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
@@ -323,7 +336,7 @@ export const Employees: React.FC = () => {
                 {positionsToUse.map((position, idx) => (
                   <option key={idx} value={String(position)}>
                     {String(position)}
-                  </option>
+                  </option> 
                 ))}
               </select>
               <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
@@ -334,7 +347,7 @@ export const Employees: React.FC = () => {
             <label
               htmlFor="importExcel"
               className="cursor-pointer flex items-center px-4 py-2 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
-            >
+            > 
               <Upload className="w-4 h-4 mr-2" />
               Import Excel
             </label>
@@ -342,7 +355,7 @@ export const Employees: React.FC = () => {
               id="importExcel"
               type="file"
               accept=".xlsx, .xls"
-              onChange={handleFileUpload}
+              onChange={handleFileUpload} 
               className="hidden"
             />
 
@@ -350,7 +363,7 @@ export const Employees: React.FC = () => {
               onClick={handleDownloadSampleExcel}
               className="flex items-center px-4 py-2 text-blue-700 border border-blue-300 bg-blue-50 hover:bg-blue-100 rounded-lg"
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 mr-2" /> 
               Sample Excel
             </button>
 
@@ -358,7 +371,7 @@ export const Employees: React.FC = () => {
               onClick={handleExportToExcel}
               className="flex items-center px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 mr-2" /> 
               Export
             </button>
 
@@ -366,7 +379,7 @@ export const Employees: React.FC = () => {
               onClick={handleAddEmployee}
               className="flex items-center px-4 py-2 text-white bg-green-600 hover:bg-green-700 rounded-lg"
             >
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 mr-2" /> 
               Add New Employee
             </button>
           </div>
