@@ -1,0 +1,3 @@
+# Sample Excel Header
+Employee ID,Name,Email,Phone,Office ID,Position ID,Monthly Salary,Allowed Late Days,Reporting Time,Duty Hours,Hire Date,Status
+EMP005,Example Employee,example@company.com,1234567890,1,2,60000,3,09:00:00,8,2025-01-01,active

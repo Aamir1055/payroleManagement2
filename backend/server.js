@@ -32,12 +32,20 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 
 // Protected routes with role-based access
-app.use('/api/employees', verifyToken, employeeRoutes);
+//app.use('/api/employees', verifyToken, employeeRoutes);
+
+
+app.use('/api/employees',employeeRoutes);
+
 app.use('/api/attendance', verifyToken, attendanceRoutes);
 app.use('/api/payroll', verifyToken, requireManager, payrollRoutes); // Admin, HR, and Floor Manager
 app.use('/api/holidays', verifyToken, requireHR, holidaysRoutes); // Admin and HR only
 app.use('/api/masters', verifyToken, masterRoutes); // Admin can modify, all can read
 app.use('/api/reports', verifyToken, requireManager, reportsRoutes); // Admin, HR, and Floor Manager
+
+
+//app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {

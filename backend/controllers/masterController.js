@@ -2,7 +2,6 @@ const { query } = require('../utils/dbPromise');
 
 // ================ OFFICE CONTROLLERS ================
 
-// Get all offices
 exports.getAllOffices = async (req, res) => {
   try {
     const results = await query(`
@@ -32,7 +31,6 @@ exports.getAllOffices = async (req, res) => {
   }
 };
 
-// Create a new office
 exports.createOffice = async (req, res) => {
   try {
     const { name, location } = req.body;
@@ -61,7 +59,6 @@ exports.createOffice = async (req, res) => {
   }
 };
 
-// Create office with positions - simplified version
 exports.createOfficeWithPositions = async (req, res) => {
   try {
     const { officeName, location, positions } = req.body;
@@ -70,7 +67,6 @@ exports.createOfficeWithPositions = async (req, res) => {
       return res.status(400).json({ error: 'Office name is required' });
     }
 
-    // Create office first
     const officeResult = await query(
       'INSERT INTO offices (name, location) VALUES (?, ?)', 
       [officeName, location || '']
@@ -88,7 +84,6 @@ exports.createOfficeWithPositions = async (req, res) => {
   }
 };
 
-// Get office positions with schedules
 exports.getOfficePositions = async (req, res) => {
   try {
     const results = await query(`
@@ -106,7 +101,6 @@ exports.getOfficePositions = async (req, res) => {
       ORDER BY o.name, p.title
     `);
     
-    // Group by office
     const groupedData = {};
     results.forEach(row => {
       if (!groupedData[row.office_name]) {
@@ -135,7 +129,6 @@ exports.getOfficePositions = async (req, res) => {
   }
 };
 
-// Get office position details
 exports.getOfficePositionDetails = async (req, res) => {
   try {
     const { officeId, positionId } = req.params;
@@ -163,9 +156,22 @@ exports.getOfficePositionDetails = async (req, res) => {
   }
 };
 
+exports.getOfficeById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const results = await query('SELECT * FROM offices WHERE id = ?', [id]);
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Office not found' });
+    }
+    res.json(results[0]);
+  } catch (err) {
+    console.error('Error fetching office:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ================ POSITION CONTROLLERS ================
 
-// Get all positions
 exports.getAllPositions = async (req, res) => {
   try {
     const results = await query(`
@@ -183,7 +189,6 @@ exports.getAllPositions = async (req, res) => {
   }
 };
 
-// Create a new position
 exports.createPosition = async (req, res) => {
   try {
     const { title, description } = req.body;
@@ -212,7 +217,57 @@ exports.createPosition = async (req, res) => {
   }
 };
 
-// Create office-specific position with schedule
+exports.updatePosition = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description } = req.body;
+
+    const result = await query(
+      'UPDATE positions SET title = ?, description = ? WHERE id = ?',
+      [title, description, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Position not found' });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Position updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating position:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      error: error.message 
+    });
+  }
+};
+
+exports.deletePosition = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('DELETE FROM positions WHERE id = ?', [id]);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Position not found' });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Position deleted successfully' 
+    });
+  } catch (error) {
+    console.error('Error deleting position:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      error: error.message 
+    });
+  }
+};
+
 exports.createOfficeSpecificPosition = async (req, res) => {
   try {
     const { officeName, positionName, reportingTime, dutyHours } = req.body;
@@ -221,7 +276,6 @@ exports.createOfficeSpecificPosition = async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // First, get office ID
     const officeResult = await query('SELECT id FROM offices WHERE name = ?', [officeName]);
     
     if (officeResult.length === 0) {
@@ -230,19 +284,16 @@ exports.createOfficeSpecificPosition = async (req, res) => {
     
     const officeId = officeResult[0].id;
     
-    // Check if position exists, if not create it
     let posResult = await query('SELECT id FROM positions WHERE title = ?', [positionName]);
     let positionId;
     
     if (posResult.length > 0) {
       positionId = posResult[0].id;
     } else {
-      // Create new position
       const newPosResult = await query('INSERT INTO positions (title) VALUES (?)', [positionName]);
       positionId = newPosResult.insertId;
     }
     
-    // Create office-position relationship
     await query(`
       INSERT INTO office_positions (office_id, position_id, reporting_time, duty_hours)
       VALUES (?, ?, ?, ?)
@@ -264,9 +315,189 @@ exports.createOfficeSpecificPosition = async (req, res) => {
   }
 };
 
+exports.updateOfficeSpecificPosition = async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    const { id } = req.params;
+    const { officeName, positionName, reportingTime, dutyHours } = req.body;
+
+    // 1. Verify office exists
+    const [office] = await connection.query(
+      'SELECT id FROM offices WHERE name = ? LIMIT 1', 
+      [officeName]
+    );
+    if (!office) {
+      await connection.rollback();
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Office not found' 
+      });
+    }
+
+    // 2. Verify position exists or create it
+    let [position] = await connection.query(
+      'SELECT id FROM positions WHERE title = ? LIMIT 1', 
+      [positionName]
+    );
+    
+    if (!position) {
+      const [result] = await connection.query(
+        'INSERT INTO positions (title) VALUES (?)', 
+        [positionName]
+      );
+      position = { id: result.insertId };
+    }
+
+    // 3. Check if the new relationship would create a duplicate
+    const [existing] = await connection.query(
+      `SELECT id FROM office_positions 
+       WHERE office_id = ? AND position_id = ? AND id != ?`,
+      [office.id, position.id, id]
+    );
+
+    if (existing.length > 0) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: 'This office-position relationship already exists',
+        existingId: existing[0].id
+      });
+    }
+
+    // 4. Update the relationship
+    const [result] = await connection.query(
+      `UPDATE office_positions 
+       SET office_id = ?,
+           position_id = ?,
+           reporting_time = ?,
+           duty_hours = ?
+       WHERE id = ?`,
+      [office.id, position.id, reportingTime, dutyHours, id]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Office position relationship not found' 
+      });
+    }
+
+    await connection.commit();
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Office position updated successfully',
+      data: {
+        officeId: office.id,
+        positionId: position.id,
+        reportingTime,
+        dutyHours
+      }
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error updating office position:', error);
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        success: false,
+        message: 'This office-position combination already exists',
+        error: error.message
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      error: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.deleteOfficePosition = async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    const { officeId, positionId } = req.params;
+
+    // First check if relationship exists
+    const [existing] = await connection.query(
+      'SELECT id FROM office_positions WHERE office_id = ? AND position_id = ?',
+      [officeId, positionId]
+    );
+
+    if (existing.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ 
+        success: false,
+        message: 'Office-Position relationship not found' 
+      });
+    }
+
+    // Delete the relationship
+    const [result] = await connection.query(
+      'DELETE FROM office_positions WHERE office_id = ? AND position_id = ?',
+      [officeId, positionId]
+    );
+
+    await connection.commit();
+    
+    res.status(200).json({ 
+      success: true,
+      message: 'Office-Position relationship deleted successfully',
+      deletedCount: result.affectedRows
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error deleting office position:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to delete office position',
+      error: error.message 
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+exports.updateOfficePosition = async (req, res) => {
+  try {
+    const { officeId, positionId } = req.params;
+    const { reportingTime, dutyHours } = req.body;
+
+    const result = await query(
+      `UPDATE office_positions 
+       SET reporting_time = ?, duty_hours = ?
+       WHERE office_id = ? AND position_id = ?`,
+      [reportingTime, dutyHours, officeId, positionId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Office position not found' });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Office position updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating office position:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      error: error.message 
+    });
+  }
+};
+
 // ================ DASHBOARD CONTROLLERS ================
 
-// Dashboard summary
 exports.getDashboardSummary = async (req, res) => {
   try {
     const summaryQuery = `

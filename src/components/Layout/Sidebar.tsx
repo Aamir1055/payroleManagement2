@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Plus,
   User,
-  Settings
+  Settings,
+  Database
 } from 'lucide-react';
 
 const navigation = [
@@ -23,17 +24,16 @@ const navigation = [
   { name: 'Payroll', href: '/payroll', icon: DollarSign },
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Holidays', href: '/holidays', icon: Calendar },
-  { name: 'Profile', href: '/profile', icon: User }
+  { name: 'Profile', href: '/profile', icon: User },
+  { name: 'Offices', href: '/master/offices', icon: Building2 }
 ];
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddOffice?: () => void;
-  onAddPosition?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onAddOffice, onAddPosition }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const [masterDataExpanded, setMasterDataExpanded] = useState(false);
   const { user, logout, hasPermission } = useAuth();
 
@@ -63,6 +63,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onAddOffice, 
         return hasPermission('manage_payroll');
       case '/reports':
         return hasPermission('view_reports');
+      case '/master/offices':
+        return hasPermission('manage_offices');
       default:
         return true; // Dashboard and Profile are always accessible
     }
@@ -91,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onAddOffice, 
           </div>
           
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2">
+          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
             {filteredNavigation.map((item) => (
               <NavLink
                 key={item.name}
@@ -118,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onAddOffice, 
                   className="flex items-center justify-between w-full px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors duration-200"
                 >
                   <div className="flex items-center">
-                    <Settings className="w-5 h-5 mr-3" />
+                    <Database className="w-5 h-5 mr-3" />
                     Master Data
                   </div>
                   {masterDataExpanded ? (
@@ -130,28 +132,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, onAddOffice, 
                 
                 {masterDataExpanded && (
                   <div className="ml-4 mt-2 space-y-1">
-                    <button
-                      onClick={() => {
-                        onAddOffice?.();
-                        window.innerWidth < 1024 && onClose();
-                      }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+                    <NavLink
+                      to="/master/offices"
+                      className={({ isActive }) =>
+                        `flex items-center px-4 py-2 text-sm rounded-md transition-colors duration-200 ${
+                          isActive
+                            ? 'bg-blue-50 text-blue-600'
+                            : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+                        }`
+                      }
+                      onClick={() => window.innerWidth < 1024 && onClose()}
                     >
                       <Building2 className="w-4 h-4 mr-3" />
-                      <Plus className="w-3 h-3 mr-2" />
-                      Add Office
-                    </button>
-                    <button
-                      onClick={() => {
-                        onAddPosition?.();
-                        window.innerWidth < 1024 && onClose();
-                      }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors duration-200"
+                      Offices
+                    </NavLink>
+                    <NavLink
+                      to="/master/positions"
+                      className={({ isActive }) =>
+                        `flex items-center px-4 py-2 text-sm rounded-md transition-colors duration-200 ${
+                          isActive
+                            ? 'bg-blue-50 text-blue-600'
+                            : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+                        }`
+                      }
+                      onClick={() => window.innerWidth < 1024 && onClose()}
                     >
                       <Briefcase className="w-4 h-4 mr-3" />
-                      <Plus className="w-3 h-3 mr-2" />
-                      Add Position
-                    </button>
+                      Positions
+                    </NavLink>
                   </div>
                 )}
               </div>

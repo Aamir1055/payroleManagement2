@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, LoginCredentials } from './context/AuthContext';
 import { LoginForm } from './components/Auth/LoginForm';
-
+import { OfficeManagement } from './pages/OfficeManagement';
 // Page imports
 import { Dashboard } from './pages/Dashboard';
 import { Employees } from './pages/Employees';
@@ -116,6 +116,16 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <Profile />
+          </ProtectedRoute>
+        } 
+      />
+      
+      {/* Office Management - Admin only */}
+      <Route 
+        path="/master/offices" 
+        element={
+          <ProtectedRoute permission="manage_offices">
+            <OfficeManagement />
           </ProtectedRoute>
         } 
       />

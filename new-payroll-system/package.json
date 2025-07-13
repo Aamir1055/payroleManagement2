@@ -1,11 +1,11 @@
 {
   "name": "payroll-management-system",
   "version": "1.0.0",
-  "description": "Complete Payroll Management System with Employee Management, Attendance Tracking, and Salary Calculations",
+  "description": "Comprehensive Payroll Management System",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc \u0026\u0026 vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "server": "node backend/server.js"
   },
@@ -20,7 +20,15 @@
     "react-hot-toast": "^2.4.0",
     "react-hook-form": "^7.43.1",
     "recharts": "^2.5.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "mysql2": "^3.6.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0",
+    "node-cron": "^3.0.2",
+    "moment": "^2.29.4"
   },
   "devDependencies": {
     "@types/react": "^18.0.27",
@@ -31,15 +39,6 @@
     "tailwindcss": "^3.2.7",
     "typescript": "^4.9.4",
     "vite": "^4.1.0"
-  },
-  "backend-dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "multer": "^1.4.5-lts.1",
-    "sqlite3": "^5.1.6",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.0",
-    "node-cron": "^3.0.2",
-    "moment": "^2.29.4"
   }
 }
+

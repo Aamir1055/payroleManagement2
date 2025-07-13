@@ -127,36 +127,20 @@ export const Employees: React.FC = () => {
     saveAs(blob, `employees_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const handleDownloadSampleExcel = () => {
-    const sampleData = [
-      {
-        'Employee ID': '', // Will be auto-generated
-        'Name': 'John Doe',
-        'Email': 'john@example.com',
-        'Office': officesToUse[0] || 'Main Office',
-        'Position': positionsToUse[0] || 'Employee',
-        'Monthly Salary (AED)': 5000,
-        'Joining Date': '2023-01-01',
-        'Status': 'active',
-      }
-    ];
-    
-    // Add instructions sheet
-    const instructions = [
-      { 'Field': 'Employee ID', 'Description': 'Leave empty for auto-generation (EMP001, EMP002, etc.)' },
-      { 'Field': 'Office', 'Description': 'Use exact office name from your system' },
-      { 'Field': 'Position', 'Description': 'Use exact position title from your system' },
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(sampleData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'SampleEmployees');
-    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
-    saveAs(blob, 'sample_employee_import.xlsx');
-    
-    // Also add instructions sheet
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(instructions), 'Instructions');
+  const handleDownloadSampleExcel = async () => {
+    try {
+      const response = await fetch('/api/employees/template/download', {
+        headers: getAuthHeaders(),
+      });
+      
+      if (!response.ok) throw new Error('Failed to download template');
+      
+      const blob = await response.blob();
+      saveAs(blob, 'employee_import_template.xlsx');
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      alert('Failed to download template');
+    }
   };
 
   const handleAddEmployee = () => {
@@ -198,8 +182,8 @@ export const Employees: React.FC = () => {
   };
 
   const handleSubmitEmployee = async (data: Employee) => {
-    if (!data.office_id || !data.position_id) {
-      alert('Office and Position are required fields');
+    if (!data.employeeId || !data.office_id || !data.position_id) {
+      alert('Employee ID, Office and Position are required fields');
       return; 
     }
     
@@ -213,6 +197,7 @@ export const Employees: React.FC = () => {
       setEditingEmployee(null);
     } catch (error) {
       console.error('Error saving employee:', error);
+      alert(`Error: ${(error as Error).message}`);
     }
   };
 
@@ -222,6 +207,7 @@ export const Employees: React.FC = () => {
         await deleteEmployee(id);
       } catch (error) {
         console.error('Error deleting employee:', error);
+        alert(`Error: ${(error as Error).message}`);
       }
     }
   };
@@ -234,7 +220,7 @@ export const Employees: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('/employees/import', {
+      const response = await fetch('/api/employees/import', {
         method: 'POST',
         body: formData,
         headers: {
@@ -242,16 +228,18 @@ export const Employees: React.FC = () => {
         }, 
       });
 
-      if (response.ok) {
-        alert('Employees imported successfully');
-        refreshEmployees();
-      } else {
-        throw new Error('Failed to import employees');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to import employees');
       }
+
+      const result = await response.json();
+      alert(`Import completed. ${result.successCount} employees processed successfully.${result.errorCount > 0 ? ` ${result.errorCount} errors occurred.` : ''}`);
+      refreshEmployees();
     } catch (err) {
       alert(`Import error: ${(err as Error).message}`);
-    } catch (err) {
-      alert(`Import error: ${(err as Error).message}`);
+    } finally {
+      if (e.target) e.target.value = '';
     }
   };
 

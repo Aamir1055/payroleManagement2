@@ -1,5 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Employee } from '../types';
+
+// Updated Employee type to match backend and include originalEmployeeId for updates
+type Employee = {
+  id: number;
+  employeeId: string;
+  originalEmployeeId?: string; // For tracking original ID during updates
+  name: string;
+  email?: string;
+  office_id: number;
+  position_id: number;
+  monthlySalary: number;
+  joiningDate: string;
+  status: boolean;
+  office_name?: string;
+  position_title?: string;
+  reporting_time?: string;
+  duty_hours?: string;
+};
 
 export const useEmployees = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -31,11 +48,12 @@ export const useEmployees = () => {
       }
       
       const data = await response.json();
-      // Ensure all employees have office_name and position_title
-      const processedData = data.map((emp: Employee) => ({
+      const processedData = data.map((emp: any) => ({
         ...emp,
+        status: emp.status === 1, // Convert to boolean
         office_name: emp.office_name || 'Not assigned',
-        position_title: emp.position_title || 'Not assigned'
+        position_title: emp.position_title || 'Not assigned',
+        originalEmployeeId: emp.employeeId // Store original ID for updates
       }));
       setEmployees(processedData);
     } catch (err) {
@@ -50,25 +68,35 @@ export const useEmployees = () => {
     fetchEmployees();
   }, []);
 
-  const addEmployee = async (employee: Omit<Employee, 'id'>) => {
-    try {
-      // Ensure required fields are present
-      if (!employee.office_id || !employee.position_id) {
-        throw new Error('Office and Position are required');
-      }
+  const validateEmployeeId = (employeeId: string) => {
+    if (!employeeId) {
+      throw new Error('Employee ID is required');
+    }
+    if (!/^[a-zA-Z0-9-_]+$/.test(employeeId)) {
+      throw new Error('Employee ID can only contain letters, numbers, hyphens and underscores');
+    }
+    if (employeeId.length > 20) {
+      throw new Error('Employee ID must be 20 characters or less');
+    }
+  };
 
+  const addEmployee = async (employee: Omit<Employee, 'id' | 'originalEmployeeId'>) => {
+    try {
+      validateEmployeeId(employee.employeeId);
+
+      setLoading(true);
       const response = await fetch('/api/employees', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
           ...employee,
-          office_name: employee.office_name || 'Not assigned',
-          position_title: employee.position_title || 'Not assigned'
+          status: employee.status ? 1 : 0 // Convert boolean to number for backend
         })
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to add employee: ${response.status}`);
       }
 
       const data = await response.json();
@@ -77,31 +105,31 @@ export const useEmployees = () => {
     } catch (err) {
       console.error('Failed to add employee:', err);
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const updateEmployee = async (employeeId: string, updates: Partial<Employee>) => {
+  const updateEmployee = async (employee: Employee) => {
     try {
-      // Ensure required fields are present
-      if (updates.office_id !== undefined && !updates.office_id) {
-        throw new Error('Office is required');
-      }
-      if (updates.position_id !== undefined && !updates.position_id) {
-        throw new Error('Position is required');
+      // Check if we're trying to change the employeeId
+      if (employee.originalEmployeeId && employee.employeeId !== employee.originalEmployeeId) {
+        throw new Error('Employee ID cannot be changed');
       }
 
-      const response = await fetch(`/api/employees/${employeeId}`, {
+      setLoading(true);
+      const response = await fetch(`/api/employees/${encodeURIComponent(employee.employeeId)}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          ...updates,
-          office_name: updates.office_name || 'Not assigned',
-          position_title: updates.position_title || 'Not assigned'
+          ...employee,
+          status: employee.status ? 1 : 0 // Convert boolean to number for backend
         })
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to update employee: ${response.status}`);
       }
 
       const data = await response.json();
@@ -110,24 +138,30 @@ export const useEmployees = () => {
     } catch (err) {
       console.error('Failed to update employee:', err);
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
   const deleteEmployee = async (employeeId: string) => {
     try {
-      const response = await fetch(`/api/employees/${employeeId}`, {
+      setLoading(true);
+      const response = await fetch(`/api/employees/${encodeURIComponent(employeeId)}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to delete employee: ${response.status}`);
       }
 
       await fetchEmployees();
     } catch (err) {
       console.error('Failed to delete employee:', err);
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 

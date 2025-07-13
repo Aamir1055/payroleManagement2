@@ -1,56 +1,28 @@
-const { query } = require('../utils/dbPromise');
+const { query, beginTransaction, commitTransaction, rollbackTransaction } = require('../utils/dbPromise');
 const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
 
-// Helper to generate EMPXXX IDs
-const generateNextEmployeeId = async () => {
-  try {
-    const result = await query(`
-      SELECT employeeId FROM employees 
-      WHERE employeeId REGEXP '^EMP[0-9]+$'
-      ORDER BY CAST(SUBSTRING(employeeId, 4) AS UNSIGNED) DESC 
-      LIMIT 1
-    `);
-    
-    if (result.length === 0) {
-      return 'EMP001';
-    }
-    
-    const lastId = result[0].employeeId;
-    const lastNumber = parseInt(lastId.substring(3));
-    const nextNumber = lastNumber + 1;
-    return `EMP${nextNumber.toString().padStart(3, '0')}`;
-  } catch (error) {
-    console.error('Error generating employee ID:', error);
-    return 'EMP001';
-  }
-};
-
-// All controller methods
 module.exports = {
+  // ===============================
+  // 🔹 CRUD Operations
+  // ===============================
   getEmployees: async (req, res) => {
     try {
       const employees = await query(`
         SELECT 
-          e.id,
           e.employeeId,
           e.name,
           e.email,
-          e.office_id,
-          e.position_id,
+          o.name AS office,
+          p.title AS position,
           e.monthlySalary,
           e.joiningDate,
-          e.status,
-          o.name AS office_name,
-          p.title AS position_title,
-          op.reporting_time,
-          op.duty_hours
+          CASE WHEN e.status = 1 THEN 'Active' ELSE 'Inactive' END AS status
         FROM employees e
         LEFT JOIN offices o ON e.office_id = o.id
         LEFT JOIN positions p ON e.position_id = p.id
-        LEFT JOIN office_positions op ON e.office_id = op.office_id AND e.position_id = op.position_id
-        ORDER BY e.employeeId
+        ORDER BY e.name
       `);
       res.json(employees);
     } catch (err) {
@@ -59,240 +31,183 @@ module.exports = {
     }
   },
 
-  // Get next available employee ID
-  getNextEmployeeId: async (req, res) => {
+  getEmployeeById: async (req, res) => {
+    const { employeeId } = req.params;
     try {
-      const nextId = await generateNextEmployeeId();
-      res.json({ nextEmployeeId: nextId });
+      const result = await query(`SELECT * FROM employees WHERE employeeId = ?`, [employeeId]);
+      if (result.length === 0) return res.status(404).json({ error: 'Employee not found' });
+      res.json(result[0]);
     } catch (err) {
-      console.error('Error generating next employee ID:', err);
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch employee' });
     }
   },
 
-  getOfficePositionData: async (req, res) => {
+  createEmployee: async (req, res) => {
+  try {
+    const {
+      employeeId,
+      name,
+      email,
+      office,        // <-- Name of office
+      position,      // <-- Title of position
+      monthlySalary,
+      joiningDate,
+      status
+    } = req.body;
+
+    if (!employeeId || !name || !office || !position) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Get office ID by name
+    const [officeRow] = await query('SELECT id FROM offices WHERE name = ?', [office]);
+    if (!officeRow) return res.status(400).json({ error: `Office not found: ${office}` });
+
+    // Get position ID by title
+    const [positionRow] = await query('SELECT id FROM positions WHERE title = ?', [position]);
+    if (!positionRow) return res.status(400).json({ error: `Position not found: ${position}` });
+
+    await query(`
+      INSERT INTO employees (
+        employeeId, name, email, office_id, position_id,
+        monthlySalary, joiningDate, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      employeeId,
+      name,
+      email || null,
+      officeRow.id,
+      positionRow.id,
+      monthlySalary,
+      joiningDate,
+      status ?? 1
+    ]);
+
+    res.status(201).json({ message: 'Employee created successfully' });
+
+  } catch (error) {
+    console.error('Error creating employee:', error);
+    res.status(500).json({ error: 'Failed to create employee' });
+  }
+},
+  updateEmployee: async (req, res) => {
+    const { employeeId } = req.params;
+    const { name, email, office_id, position_id, monthlySalary, joiningDate, status } = req.body;
     try {
-      const { officeId, positionId } = req.params;
-      const result = await query(`
-        SELECT reporting_time, duty_hours 
-        FROM office_positions 
-        WHERE office_id = ? AND position_id = ?
-      `, [officeId, positionId]);
-      
-      if (result.length > 0) {
-        res.json({
-          reporting_time: result[0].reporting_time || 'Not set',
-          duty_hours: result[0].duty_hours || 'Not set'
-        });
-      } else {
-        res.json({
-          reporting_time: 'Not set',
-          duty_hours: 'Not set'
-        });
-      }
+      await query(`
+        UPDATE employees SET 
+        name = ?, email = ?, office_id = ?, position_id = ?, monthlySalary = ?, joiningDate = ?, status = ?
+        WHERE employeeId = ?
+      `, [name, email, office_id, position_id, monthlySalary, joiningDate, status, employeeId]);
+      res.json({ message: 'Employee updated successfully' });
     } catch (err) {
-      console.error('Error fetching office position data:', err);
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to update employee' });
     }
   },
 
-  getEmployeeCount: async (req, res) => {
+  deleteEmployee: async (req, res) => {
+    const { employeeId } = req.params;
     try {
-      const result = await query('SELECT COUNT(*) AS total FROM employees WHERE status = 1');
-      res.json({ total: result[0].total });
+      await query(`DELETE FROM employees WHERE employeeId = ?`, [employeeId]);
+      res.json({ message: 'Employee deleted successfully' });
     } catch (err) {
-      console.error('Error fetching employee count:', err);
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to delete employee' });
     }
   },
 
-  getTotalMonthlySalary: async (req, res) => {
-    try {
-      const result = await query('SELECT SUM(monthlySalary) AS totalSalary FROM employees WHERE status = 1');
-      res.json({ totalSalary: result[0].totalSalary || 0 });
-    } catch (err) {
-      console.error('Error fetching total salary:', err);
-      res.status(500).json({ error: err.message });
-    }
-  },
-
-  getSummaryByOffice: async (req, res) => {
-    try {
-      const results = await query(`
-        SELECT 
-          o.id AS office_id, 
-          o.name AS office,
-          COALESCE(COUNT(e.id), 0) AS totalEmployees,
-          COALESCE(SUM(e.monthlySalary), 0) AS totalSalary
-        FROM offices o
-        LEFT JOIN employees e ON o.id = e.office_id AND e.status = 1
-        GROUP BY o.id, o.name
-        ORDER BY o.name
-      `);
-      res.json(results);
-    } catch (err) {
-      console.error('Error fetching office summary:', err);
-      res.status(500).json({ error: err.message });
-    }
-  },
-
+  // ===============================
+  // 🔹 Office/Position Dropdowns
+  // ===============================
   getOfficeOptions: async (req, res) => {
     try {
-      const results = await query('SELECT id, name FROM offices ORDER BY name');
-      res.json(results);
+      const offices = await query(`SELECT id, name FROM offices ORDER BY name`);
+      res.json(offices);
     } catch (err) {
-      console.error('Error fetching office options:', err);
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch office options' });
     }
   },
 
   getPositionOptions: async (req, res) => {
     try {
-      const results = await query('SELECT id, title FROM positions ORDER BY title');
-      res.json(results);
+      const positions = await query(`SELECT id, title FROM positions ORDER BY title`);
+      res.json(positions);
     } catch (err) {
-      console.error('Error fetching position options:', err);
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch position options' });
     }
   },
 
-  // Get positions filtered by office
   getPositionsByOffice: async (req, res) => {
+    const { officeId } = req.params;
     try {
-      const { officeId } = req.params;
-      const results = await query(`
-        SELECT DISTINCT p.id, p.title 
-        FROM positions p
-        INNER JOIN office_positions op ON p.id = op.position_id
-        WHERE op.office_id = ?
-        ORDER BY p.title
-      `, [officeId]);
-      res.json(results);
+      const positions = await query(`SELECT id, title FROM positions WHERE office_id = ?`, [officeId]);
+      res.json(positions);
     } catch (err) {
-      console.error('Error fetching positions by office:', err);
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch positions' });
     }
   },
 
-  createEmployee: async (req, res) => {
+  // ===============================
+  // 🔹 Summary & Stats
+  // ===============================
+  getOfficePositionData: async (req, res) => {
+    const { officeId, positionId } = req.params;
     try {
-      let { employeeId, name, email, office_id, position_id, monthlySalary, joiningDate, status } = req.body;
-      
-      // Auto-generate employee ID if not provided or empty
-      if (!employeeId || employeeId.trim() === '') {
-        employeeId = await generateNextEmployeeId();
-      }
-      
-      const result = await query(`
-        INSERT INTO employees 
-        (employeeId, name, email, office_id, position_id, monthlySalary, joiningDate, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [employeeId, name, email, office_id, position_id, monthlySalary, joiningDate, status ? 1 : 0]);
+      const data = await query(`
+        SELECT e.name, e.email, e.monthlySalary 
+        FROM employees e 
+        WHERE e.office_id = ? AND e.position_id = ?
+      `, [officeId, positionId]);
+      res.json(data);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch data' });
+    }
+  },
 
-      // Fetch the created employee with office and position names
-      const [newEmployee] = await query(`
-        SELECT 
-          e.*,
-          o.name AS office_name,
-          p.title AS position_title,
-          op.reporting_time,
-          op.duty_hours
+  getEmployeeCount: async (req, res) => {
+    try {
+      const result = await query(`SELECT COUNT(*) AS count FROM employees`);
+      res.json(result[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch employee count' });
+    }
+  },
+
+  getTotalMonthlySalary: async (req, res) => {
+    try {
+      const result = await query(`SELECT SUM(monthlySalary) AS totalSalary FROM employees`);
+      res.json(result[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch total salary' });
+    }
+  },
+
+  getSummaryByOffice: async (req, res) => {
+    try {
+      const summary = await query(`
+        SELECT o.name AS office, COUNT(e.id) AS employeeCount
         FROM employees e
-        LEFT JOIN offices o ON e.office_id = o.id
-        LEFT JOIN positions p ON e.position_id = p.id
-        LEFT JOIN office_positions op ON e.office_id = op.office_id AND e.position_id = op.position_id
-        WHERE e.employeeId = ?
-      `, [employeeId]);
-
-      res.status(201).json(newEmployee);
+        JOIN offices o ON e.office_id = o.id
+        GROUP BY o.name
+      `);
+      res.json(summary);
     } catch (err) {
-      console.error('Error creating employee:', err);
-      if (err.code === 'ER_DUP_ENTRY') {
-        return res.status(400).json({ error: 'Employee ID already exists' });
-      }
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch summary' });
     }
   },
 
-  getEmployeeById: async (req, res) => {
-    try {
-      const [employee] = await query(`
-        SELECT 
-          e.*,
-          o.name AS office_name,
-          p.title AS position_title,
-          op.reporting_time,
-          op.duty_hours
-        FROM employees e
-        LEFT JOIN offices o ON e.office_id = o.id
-        LEFT JOIN positions p ON e.position_id = p.id
-        LEFT JOIN office_positions op ON e.office_id = op.office_id AND e.position_id = op.position_id
-        WHERE e.employeeId = ?
-      `, [req.params.employeeId]);
-
-      if (employee) {
-        res.json(employee);
-      } else {
-        res.status(404).json({ error: 'Employee not found' });
-      }
-    } catch (err) {
-      console.error('Error fetching employee:', err);
-      res.status(500).json({ error: err.message });
-    }
-  },
-
-  updateEmployee: async (req, res) => {
-    try {
-      const { name, email, office_id, position_id, monthlySalary, joiningDate, status } = req.body;
-      
-      const result = await query(`
-        UPDATE employees SET
-          name = ?, email = ?, office_id = ?, position_id = ?,
-          monthlySalary = ?, joiningDate = ?, status = ?
-        WHERE employeeId = ?
-      `, [name, email, office_id, position_id, monthlySalary, joiningDate, status ? 1 : 0, req.params.employeeId]);
-
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ error: 'Employee not found' });
-      }
-
-      // Fetch updated employee
-      const [updatedEmployee] = await query(`
-        SELECT 
-          e.*,
-          o.name AS office_name,
-          p.title AS position_title,
-          op.reporting_time,
-          op.duty_hours
-        FROM employees e
-        LEFT JOIN offices o ON e.office_id = o.id
-        LEFT JOIN positions p ON e.position_id = p.id
-        LEFT JOIN office_positions op ON e.office_id = op.office_id AND e.position_id = op.position_id
-        WHERE e.employeeId = ?
-      `, [req.params.employeeId]);
-
-      res.json(updatedEmployee);
-    } catch (err) {
-      console.error('Error updating employee:', err);
-      res.status(500).json({ error: err.message });
-    }
-  },
-
-  deleteEmployee: async (req, res) => {
-    try {
-      const result = await query('DELETE FROM employees WHERE employeeId = ?', [req.params.employeeId]);
-      if (result.affectedRows > 0) {
-        res.json({ message: 'Employee deleted successfully' });
-      } else {
-        res.status(404).json({ error: 'Employee not found' });
-      }
-    } catch (err) {
-      console.error('Error deleting employee:', err);
-      res.status(500).json({ error: err.message });
-    }
-  },
-
-  // Export employees template
+  // ===============================
+  // 🔹 Excel Export/Import
+  // ===============================
   exportEmployeesTemplate: async (req, res) => {
     try {
       const [offices, positions] = await Promise.all([
@@ -300,42 +215,40 @@ module.exports = {
         query('SELECT id, title FROM positions ORDER BY title')
       ]);
 
-      // Create sample data with proper structure
-      const sampleData = [{
+      const workbook = XLSX.utils.book_new();
+
+      const templateData = [{
         'Employee ID': 'EMP001',
         'Name': 'John Doe',
-        'Email': 'john.doe@company.com',
-        'Office ID': offices.length > 0 ? offices[0].id : 1,
-        'Position ID': positions.length > 0 ? positions[0].id : 1,
+        'Email': 'john.doe@example.com',
+        'Office': offices[0]?.name || 'Headquarters',
+        'Position': positions[0]?.title || 'Manager',
         'Monthly Salary': 5000,
-        'Joining Date': '2024-01-01',
+        'Joining Date': new Date().toISOString().split('T')[0],
         'Status': 'active'
       }];
 
-      const workbook = XLSX.utils.book_new();
-      
-      // Main template sheet
-      const templateSheet = XLSX.utils.json_to_sheet(sampleData);
+      const templateSheet = XLSX.utils.json_to_sheet(templateData);
       XLSX.utils.book_append_sheet(workbook, templateSheet, 'Employee Template');
-      
-      // Office reference sheet
-      const officeRefData = offices.map(office => ({
-        'Office ID': office.id,
-        'Office Name': office.name
-      }));
-      const officeSheet = XLSX.utils.json_to_sheet(officeRefData);
+
+      const officeSheet = XLSX.utils.json_to_sheet(offices.map(o => ({ 'Valid Office Names': o.name })));
       XLSX.utils.book_append_sheet(workbook, officeSheet, 'Office Reference');
-      
-      // Position reference sheet
-      const positionRefData = positions.map(position => ({
-        'Position ID': position.id,
-        'Position Title': position.title
-      }));
-      const positionSheet = XLSX.utils.json_to_sheet(positionRefData);
+
+      const positionSheet = XLSX.utils.json_to_sheet(positions.map(p => ({ 'Valid Position Titles': p.title })));
       XLSX.utils.book_append_sheet(workbook, positionSheet, 'Position Reference');
 
+      const instructionSheet = XLSX.utils.aoa_to_sheet([
+        ['INSTRUCTIONS:'],
+        ['1. Fill data in "Employee Template" sheet only'],
+        ['2. Use exact office/position values from reference sheets'],
+        ['3. Status must be "active" or "inactive"'],
+        ['4. Dates in YYYY-MM-DD'],
+        ['5. Employee ID must be unique']
+      ]);
+      XLSX.utils.book_append_sheet(workbook, instructionSheet, 'Instructions');
+
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
+
       res.setHeader('Content-Disposition', 'attachment; filename=employee_import_template.xlsx');
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.send(buffer);
@@ -345,36 +258,31 @@ module.exports = {
     }
   },
 
-  // Export current employees
   exportEmployees: async (req, res) => {
     try {
       const employees = await query(`
         SELECT 
-          e.employeeId as 'Employee ID',
-          e.name as 'Name',
-          e.email as 'Email',
-          o.name as 'Office',
-          p.title as 'Position',
-          e.monthlySalary as 'Monthly Salary',
-          e.joiningDate as 'Joining Date',
-          CASE WHEN e.status = 1 THEN 'Active' ELSE 'Inactive' END as 'Status'
+          e.employeeId AS 'Employee ID',
+          e.name AS 'Name',
+          e.email AS 'Email',
+          o.name AS 'Office',
+          p.title AS 'Position',
+          e.monthlySalary AS 'Monthly Salary',
+          e.joiningDate AS 'Joining Date',
+          CASE WHEN e.status = 1 THEN 'Active' ELSE 'Inactive' END AS 'Status'
         FROM employees e
         LEFT JOIN offices o ON e.office_id = o.id
         LEFT JOIN positions p ON e.position_id = p.id
         ORDER BY e.employeeId
       `);
 
-      if (employees.length === 0) {
-        return res.status(404).json({ error: 'No employees found to export' });
-      }
-
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(employees);
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Employees');
 
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      res.setHeader('Content-Disposition', 'attachment; filename=employees_export.xlsx');
+
+      res.setHeader('Content-Disposition', `attachment; filename=employees_export_${new Date().toISOString().split('T')[0]}.xlsx`);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.send(buffer);
     } catch (err) {
@@ -383,81 +291,63 @@ module.exports = {
     }
   },
 
-  // Import employees from Excel
   importEmployees: async (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
     const filePath = path.resolve(req.file.path);
-    
     try {
       const workbook = XLSX.readFile(filePath);
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const sheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('employee')) || workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet);
 
-      if (!Array.isArray(data) || data.length === 0) {
-        fs.unlinkSync(filePath);
-        return res.status(400).json({ error: 'Invalid or empty Excel file' });
-      }
+      const [offices, positions] = await Promise.all([
+        query('SELECT id, name FROM offices'),
+        query('SELECT id, title FROM positions')
+      ]);
+      const officeMap = new Map(offices.map(o => [o.name.toLowerCase(), o.id]));
+      const positionMap = new Map(positions.map(p => [p.title.toLowerCase(), p.id]));
 
+      const transaction = await beginTransaction();
       let successCount = 0;
-      let errorCount = 0;
       const errors = [];
 
-      for (const row of data) {
+      for (const [index, row] of data.entries()) {
+        const rowNumber = index + 2;
         try {
-          let employeeId = row['Employee ID'];
-          
-          // Auto-generate ID if not provided
-          if (!employeeId || employeeId.trim() === '') {
-            employeeId = await generateNextEmployeeId();
+          const empId = row['Employee ID'];
+          const name = row['Name'];
+          const officeId = officeMap.get(String(row['Office']).toLowerCase());
+          const positionId = positionMap.get(String(row['Position']).toLowerCase());
+          const monthlySalary = parseFloat(row['Monthly Salary']) || 0;
+          const joiningDate = row['Joining Date'] ? new Date(row['Joining Date']).toISOString().split('T')[0] : null;
+          const status = String(row['Status'] || 'active').toLowerCase() === 'active' ? 1 : 0;
+
+          if (!empId || !name || !officeId || !positionId) {
+            throw new Error('Missing required fields');
           }
 
-          await query(`
-            INSERT INTO employees 
-            (employeeId, name, email, office_id, position_id, monthlySalary, joiningDate, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-              name = VALUES(name),
-              email = VALUES(email),
-              office_id = VALUES(office_id),
-              position_id = VALUES(position_id),
-              monthlySalary = VALUES(monthlySalary),
-              joiningDate = VALUES(joiningDate),
-              status = VALUES(status)
-          `, [
-            employeeId,
-            row['Name'] || '',
-            row['Email'] || '',
-            parseInt(row['Office ID']) || null,
-            parseInt(row['Position ID']) || null,
-            parseFloat(row['Monthly Salary']) || 0,
-            row['Joining Date'] || new Date().toISOString().split('T')[0],
-            row['Status']?.toLowerCase() === 'active' ? 1 : 0
-          ]);
-          
+          const [existing] = await query(`SELECT id FROM employees WHERE employeeId = ?`, [empId], transaction);
+
+          if (existing) {
+            await query(`UPDATE employees SET name = ?, email = ?, office_id = ?, position_id = ?, monthlySalary = ?, joiningDate = ?, status = ?, updated_at = CURRENT_TIMESTAMP() WHERE employeeId = ?`, [name, row['Email'], officeId, positionId, monthlySalary, joiningDate, status, empId], transaction);
+          } else {
+            await query(`INSERT INTO employees (employeeId, name, email, office_id, position_id, monthlySalary, joiningDate, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [empId, name, row['Email'], officeId, positionId, monthlySalary, joiningDate, status], transaction);
+          }
+
           successCount++;
         } catch (error) {
-          errorCount++;
-          errors.push(`Row ${successCount + errorCount}: ${error.message}`);
+          errors.push(`Row ${rowNumber}: ${error.message}`);
         }
       }
 
+      await commitTransaction(transaction);
       fs.unlinkSync(filePath);
-      
-      res.json({
-        message: `Import completed. ${successCount} employees processed successfully.`,
-        successCount,
-        errorCount,
-        errors: errors.slice(0, 10) // Limit error messages
-      });
+      res.json({ message: `Imported ${successCount} employees`, errors });
     } catch (err) {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-      console.error('Error importing employees:', err);
-      res.status(500).json({ error: 'Failed to process the file: ' + err.message });
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      console.error('Import failed:', err);
+      res.status(500).json({ error: 'Failed to import employees', details: err.message });
     }
   }
 };

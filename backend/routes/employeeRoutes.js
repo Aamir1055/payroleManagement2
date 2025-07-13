@@ -2,26 +2,36 @@ const express = require('express');
 const router = express.Router();
 const employeeController = require('../controllers/employeeController');
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// Configure multer for file uploads
+// Create uploads directory if it doesn't exist
+const uploadDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const upload = multer({ 
-  dest: 'uploads/',
+  dest: uploadDir,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
-        file.mimetype === 'application/vnd.ms-excel') {
+    const validMimeTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ];
+    
+    if (validMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('Only Excel files are allowed'), false);
     }
   },
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024 // 5MB
   }
 });
 
 // Employee data routes
 router.get('/', employeeController.getEmployees);
-router.get('/next-id', employeeController.getNextEmployeeId);
 router.get('/office-position/:officeId/:positionId', employeeController.getOfficePositionData);
 router.get('/count', employeeController.getEmployeeCount);
 router.get('/salary/total', employeeController.getTotalMonthlySalary);
@@ -42,5 +52,16 @@ router.delete('/:employeeId', employeeController.deleteEmployee);
 router.get('/template/download', employeeController.exportEmployeesTemplate);
 router.get('/export', employeeController.exportEmployees);
 router.post('/import', upload.single('file'), employeeController.importEmployees);
+
+// Error handling middleware
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ 
+      error: 'File upload error',
+      details: err.message 
+    });
+  }
+  next(err);
+});
 
 module.exports = router;
