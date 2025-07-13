@@ -136,7 +136,7 @@ export const Employees: React.FC = () => {
       if (!response.ok) throw new Error('Failed to download template');
       
       const blob = await response.blob();
-      saveAs(blob, 'employee_import_template.xlsx');
+      saveAs(blob, `employee_import_template_${new Date().toISOString().split('T')[0]}.xlsx`);
     } catch (error) {
       console.error('Error downloading template:', error);
       alert('Failed to download template');
@@ -146,13 +146,13 @@ export const Employees: React.FC = () => {
   const handleAddEmployee = () => {
     setEditingEmployee({
       id: 0,
-      employeeId: '',
+      employeeId: '', // Will be auto-generated
       name: '',
       email: '',
       office_id: 0, 
-      office_name: officesToUse[0] || '',
+      office_name: '',
       position_id: 0,
-      position_title: positionsToUse[0] || '',
+      position_title: '',
       monthlySalary: 0,
       joiningDate: new Date().toISOString().split('T')[0],
       status: true
@@ -164,8 +164,8 @@ export const Employees: React.FC = () => {
   const handleEditEmployee = (employee: Employee) => {
     setEditingEmployee({
       ...employee,
-      office_name: employee.office_name || officesToUse[0] || '',
-      position_title: employee.position_title || positionsToUse[0] || ''
+      office_name: employee.office_name || '',
+      position_title: employee.position_title || ''
     });
     setViewOnly(false);
     setShowForm(true);
@@ -174,16 +174,16 @@ export const Employees: React.FC = () => {
   const handleViewEmployee = (employee: Employee) => {
     setEditingEmployee({
       ...employee,
-      office_name: employee.office_name || officesToUse[0] || '',
-      position_title: employee.position_title || positionsToUse[0] || ''
+      office_name: employee.office_name || '',
+      position_title: employee.position_title || ''
     });
     setViewOnly(true);
     setShowForm(true);
   };
 
   const handleSubmitEmployee = async (data: Employee) => {
-    if (!data.employeeId || !data.office_id || !data.position_id) {
-      alert('Employee ID, Office and Position are required fields');
+    if (!data.office_id || !data.position_id) {
+      alert('Office and Position are required fields');
       return; 
     }
     

@@ -33,6 +33,7 @@ const upload = multer({
 // Employee data routes
 router.get('/', employeeController.getEmployees);
 router.get('/count', employeeController.getEmployeeCount);
+router.get('/next-id', employeeController.getNextEmployeeId);
 router.get('/salary/total', employeeController.getTotalMonthlySalary);
 router.get('/summary-by-office', employeeController.getSummaryByOffice);
 

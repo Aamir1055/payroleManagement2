@@ -277,6 +277,29 @@ module.exports = {
     }
   },
 
+  // Generate next employee ID
+  getNextEmployeeId: async (req, res) => {
+    try {
+      const result = await query(`
+        SELECT employeeId 
+        FROM employees 
+        WHERE employeeId REGEXP '^EMP[0-9]+$' 
+        ORDER BY CAST(SUBSTRING(employeeId, 4) AS UNSIGNED) DESC 
+        LIMIT 1
+      `);
+
+      let nextNumber = 1;
+      if (result.length > 0) {
+        const lastNumber = parseInt(result[0].employeeId.substring(3));
+        nextNumber = lastNumber + 1;
+      }
+      res.json({ nextEmployeeId: `EMP${nextNumber.toString().padStart(3, '0')}` });
+    } catch (err) {
+      console.error('Error generating next employee ID:', err);
+      res.status(500).json({ error: 'Failed to generate employee ID' });
+    }
+  },
+
   // ===============================
   // 🔹 Excel Export/Import
   // ===============================
@@ -290,14 +313,14 @@ module.exports = {
       const workbook = XLSX.utils.book_new();
 
       const templateData = [{
-        'Employee ID': 'EMP001',
+        'Employee ID': '',
         'Name': 'John Doe',
         'Email': 'john.doe@example.com',
-        'Office ID': offices[0]?.id || 1,
-        'Position ID': positions[0]?.id || 1,
+        'Office': offices[0]?.name || 'Head Office',
+        'Position': positions[0]?.title || 'Software Developer',
         'Monthly Salary': 5000,
         'Joining Date': new Date().toISOString().split('T')[0],
-        'Status': 1
+        'Status': 'Active'
       }];
 
       const templateSheet = XLSX.utils.json_to_sheet(templateData);
@@ -311,12 +334,13 @@ module.exports = {
 
       const instructionSheet = XLSX.utils.aoa_to_sheet([
         ['INSTRUCTIONS:'],
-        ['1. Fill data in "Employee Template" sheet only'],
-        ['2. Use Office ID and Position ID from reference sheets'],
-        ['3. Status: 1 for Active, 0 for Inactive'],
+        ['1. Fill data in "Employee Template" sheet'],
+        ['2. Employee ID will be auto-generated if left empty'],
+        ['3. Use exact Office and Position names from reference sheets'],
+        ['4. Status: Active or Inactive'],
         ['4. Dates in YYYY-MM-DD format'],
-        ['5. Employee ID must be unique'],
-        ['6. Make sure Office ID and Position ID combination exists in office_positions table']
+        ['5. Office and Position combination must exist in system'],
+        ['6. All fields except Employee ID are required']
       ]);
       XLSX.utils.book_append_sheet(workbook, instructionSheet, 'Instructions');
 
@@ -367,6 +391,28 @@ module.exports = {
     }
   },
 
+  // Generate next employee ID for auto-generation
+  generateNextEmployeeId: async () => {
+    try {
+      const result = await query(`
+        SELECT employeeId 
+        FROM employees 
+        WHERE employeeId REGEXP '^EMP[0-9]+$' 
+        ORDER BY CAST(SUBSTRING(employeeId, 4) AS UNSIGNED) DESC 
+        LIMIT 1
+      `);
+
+      let nextNumber = 1;
+      if (result.length > 0) {
+        const lastNumber = parseInt(result[0].employeeId.substring(3));
+        nextNumber = lastNumber + 1;
+      }
+      return `EMP${nextNumber.toString().padStart(3, '0')}`;
+    } catch (err) {
+      throw new Error('Failed to generate employee ID');
+    }
+  },
+
   importEmployees: async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -384,18 +430,39 @@ module.exports = {
       for (const [index, row] of data.entries()) {
         const rowNumber = index + 2;
         try {
-          const empId = row['Employee ID'];
+          let empId = row['Employee ID'];
           const name = row['Name'];
           const email = row['Email'];
-          const officeId = parseInt(row['Office ID']);
-          const positionId = parseInt(row['Position ID']);
+          const officeName = row['Office'];
+          const positionName = row['Position'];
           const monthlySalary = parseFloat(row['Monthly Salary']) || 0;
           const joiningDate = row['Joining Date'] ? new Date(row['Joining Date']).toISOString().split('T')[0] : null;
-          const status = parseInt(row['Status']) || 1;
+          const statusText = row['Status'] || 'Active';
+          const status = statusText.toLowerCase() === 'active' ? 1 : 0;
 
-          if (!empId || !name || !officeId || !positionId) {
-            throw new Error('Missing required fields');
+          if (!name || !officeName || !positionName) {
+            throw new Error('Missing required fields: Name, Office, Position');
           }
+
+          // Auto-generate employee ID if not provided
+          if (!empId) {
+            empId = await module.exports.generateNextEmployeeId();
+          }
+
+          // Get office ID
+          const [office] = await query(`SELECT id FROM offices WHERE name = ?`, [officeName], transaction);
+          if (!office) {
+            throw new Error(`Office "${officeName}" not found`);
+          }
+
+          // Get position ID
+          const [position] = await query(`SELECT id FROM positions WHERE title = ?`, [positionName], transaction);
+          if (!position) {
+            throw new Error(`Position "${positionName}" not found`);
+          }
+
+          const officeId = office.id;
+          const positionId = position.id;
 
           // Verify office-position combination exists
           const officePositionCheck = await query(`
@@ -403,7 +470,7 @@ module.exports = {
           `, [officeId, positionId], transaction);
 
           if (officePositionCheck.length === 0) {
-            throw new Error('Invalid office-position combination');
+            throw new Error(`Office "${officeName}" does not have position "${positionName}"`);
           }
 
           const [existing] = await query(`SELECT id FROM employees WHERE employeeId = ?`, [empId], transaction);

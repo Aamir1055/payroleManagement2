@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { X } from 'lucide-react';
+import { X, RefreshCw } from 'lucide-react';
 import { Employee } from '../../types';
 
 interface Office {
@@ -35,6 +35,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [reportingTime, setReportingTime] = useState<string>('');
   const [dutyHours, setDutyHours] = useState<string>('');
   const [positionsLoading, setPositionsLoading] = useState(false);
+  const [generatingId, setGeneratingId] = useState(false);
 
   const {
     register,
@@ -85,6 +86,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         const officesData = officesResponse.ok ? await officesResponse.json() : [];
         setOffices(officesData);
 
+        // Auto-generate employee ID for new employees
+        if (!employee) {
+          await generateEmployeeId();
+        }
+
         // If editing an employee, populate the form
         if (employee) {
           reset({
@@ -115,6 +121,23 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
     initializeForm();
   }, [employee, reset]);
+
+  const generateEmployeeId = async () => {
+    try {
+      setGeneratingId(true);
+      const response = await fetch('/api/employees/next-id', {
+        headers: getAuthHeaders()
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setValue('employeeId', data.nextEmployeeId);
+      }
+    } catch (error) {
+      console.error('Error generating employee ID:', error);
+    } finally {
+      setGeneratingId(false);
+    }
+  };
 
   // Fetch positions when office changes
   useEffect(() => {
@@ -202,8 +225,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
       const completeEmployeeData: Employee = {
         ...formData,
-        office_name: selectedOffice?.name || '',
-        position_title: selectedPosition?.title || '',
+        office_name: selectedOffice?.name || formData.office_name || '',
+        position_title: selectedPosition?.title || formData.position_title || '',
         joiningDate: formData.joiningDate ? new Date(formData.joiningDate).toISOString() : '',
         status: formData.status ?? true,
         reporting_time: reportingTime === 'Not set' || reportingTime === 'Not available' ? undefined : reportingTime,
@@ -250,20 +273,37 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Employee ID *
+                  Employee ID * {!employee && <span className="text-xs text-blue-600">(Auto-generated)</span>}
                 </label>
-                <input
-                  {...register('employeeId', { 
-                    required: 'Employee ID is required',
-                    pattern: {
-                      value: /^EMP\d{3,}$/i,
-                      message: 'Employee ID must start with EMP followed by numbers (e.g., EMP001)'
-                    }
-                  })}
-                  disabled={viewOnly || !!employee?.employeeId}
-                  className={`w-full border ${errors.employeeId ? 'border-red-500' : 'border-gray-300'} rounded-lg px-3 py-2 ${viewOnly ? 'bg-gray-100' : ''}`}
-                  placeholder="EMP001"
-                />
+                <div className="flex space-x-2">
+                  <input
+                    {...register('employeeId', { 
+                      required: 'Employee ID is required',
+                      pattern: {
+                        value: /^EMP\d{3,}$/i,
+                        message: 'Employee ID must start with EMP followed by numbers (e.g., EMP001)'
+                      }
+                    })}
+                    disabled={viewOnly || generatingId}
+                    className={`flex-1 border ${errors.employeeId ? 'border-red-500' : 'border-gray-300'} rounded-lg px-3 py-2 ${viewOnly ? 'bg-gray-100' : ''}`}
+                    placeholder="EMP001"
+                  />
+                  {!employee && !viewOnly && (
+                    <button
+                      type="button"
+                      onClick={generateEmployeeId}
+                      disabled={generatingId}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      title="Generate new Employee ID"
+                    >
+                      {generatingId ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
+                </div>
                 {errors.employeeId && (
                   <p className="text-red-500 text-xs mt-1">{errors.employeeId.message}</p>
                 )}

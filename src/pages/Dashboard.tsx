@@ -383,8 +383,8 @@ export const Dashboard: React.FC = () => {
                             Remove
                           </button>
                         </div>
-                      </div>
-                    </div>
+                  {offices.map((office, index) => (
+                    <option key={index} value={office || ''}>{office || 'Unknown Office'}</option>
                   ))}
                   
                   {officePositions.length === 0 && (
