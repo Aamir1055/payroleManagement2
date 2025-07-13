@@ -32,7 +32,6 @@ const upload = multer({
 
 // Employee data routes
 router.get('/', employeeController.getEmployees);
-router.get('/office-position/:officeId/:positionId', employeeController.getOfficePositionData);
 router.get('/count', employeeController.getEmployeeCount);
 router.get('/salary/total', employeeController.getTotalMonthlySalary);
 router.get('/summary-by-office', employeeController.getSummaryByOffice);
@@ -41,6 +40,7 @@ router.get('/summary-by-office', employeeController.getSummaryByOffice);
 router.get('/offices/options', employeeController.getOfficeOptions);
 router.get('/positions/options', employeeController.getPositionOptions);
 router.get('/positions/by-office/:officeId', employeeController.getPositionsByOffice);
+router.get('/office-position-details/:officeId/:positionId', employeeController.getOfficePositionDetails);
 
 // Employee CRUD operations
 router.post('/', employeeController.createEmployee);

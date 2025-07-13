@@ -15,7 +15,7 @@ type Employee = {
   office_name?: string;
   position_title?: string;
   reporting_time?: string;
-  duty_hours?: string;
+  duty_hours?: number;
 };
 
 export const useEmployees = () => {
@@ -72,8 +72,8 @@ export const useEmployees = () => {
     if (!employeeId) {
       throw new Error('Employee ID is required');
     }
-    if (!/^[a-zA-Z0-9-_]+$/.test(employeeId)) {
-      throw new Error('Employee ID can only contain letters, numbers, hyphens and underscores');
+    if (!/^EMP\d{3,}$/i.test(employeeId)) {
+      throw new Error('Employee ID must start with EMP followed by numbers (e.g., EMP001)');
     }
     if (employeeId.length > 20) {
       throw new Error('Employee ID must be 20 characters or less');
@@ -110,7 +110,7 @@ export const useEmployees = () => {
     }
   };
 
-  const updateEmployee = async (employee: Employee) => {
+  const updateEmployee = async (employeeId: string, employee: Employee) => {
     try {
       // Check if we're trying to change the employeeId
       if (employee.originalEmployeeId && employee.employeeId !== employee.originalEmployeeId) {
@@ -118,7 +118,7 @@ export const useEmployees = () => {
       }
 
       setLoading(true);
-      const response = await fetch(`/api/employees/${encodeURIComponent(employee.employeeId)}`, {
+      const response = await fetch(`/api/employees/${encodeURIComponent(employeeId)}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({
